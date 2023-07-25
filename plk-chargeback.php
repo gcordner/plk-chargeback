@@ -43,8 +43,8 @@ function chargeback_blocker_admin_page() {
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=chargeback_blocker' ) ); ?>">
 			<?php wp_nonce_field( 'chargeback_blocker_save_nonce', 'chargeback_blocker_save_nonce' ); ?>
 
-<!-- Input fields for First & Last Name, Street Address, Email Address, and Phone Number -->
-	<label for="first_name">First Name:</label>
+			<!-- Input fields for First & Last Name, Street Address, Email Address, and Phone Number -->
+			<label for="first_name">First Name:</label>
 			<input type="text" name="first_name" id="first_name">
 			<br>
 
@@ -64,7 +64,15 @@ function chargeback_blocker_admin_page() {
 			<input type="text" name="phone" id="phone">
 			<br>
 
-			<!-- Buttons to submit the form and add/edit/delete entries -->
+			<!-- Status dropdown field -->
+			<label for="status">Status:</label>
+			<select name="status" id="status">
+				<option value="Paid">Paid</option>
+				<option value="Collection - FCR">Collection - FCR</option>
+			</select>
+			<br>
+
+			<!-- Buttons to submit the form -->
 			<input type="submit" name="submit" value="Save Entry">
 		</form>
 
@@ -73,19 +81,42 @@ function chargeback_blocker_admin_page() {
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=chargeback_blocker' ) ); ?>">
 			<?php wp_nonce_field( 'chargeback_blocker_delete_nonce', 'chargeback_blocker_delete_nonce' ); ?>
 
+			<!-- Make the table sortable and searchable -->
+			<?php
+			$sortable_columns = array(
+				'first_name'     => 'First Name',
+				'last_name'      => 'Last Name',
+				'street_address' => 'Street Address',
+				'email'          => 'Email Address',
+				'phone'          => 'Phone Number',
+				'status'         => 'Status',
+			);
+
+			// Get the current ordering.
+			$orderby = isset( $_GET['orderby'] ) && array_key_exists( $_GET['orderby'], $sortable_columns ) ? $_GET['orderby'] : 'first_name';
+
+			// Get the current order direction.
+			$order = isset( $_GET['order'] ) && in_array( strtoupper( $_GET['order'] ), array( 'ASC', 'DESC' ) ) ? strtoupper( $_GET['order'] ) : 'ASC';
+
+			// Sort the block list entries.
+			$sorted_block_list = chargeback_blocker_sort_entries( $block_list, $orderby, $order );
+			?>
+
 			<table class="wp-list-table widefat fixed striped">
 				<thead>
 					<tr>
 						<th>Delete</th>
-						<th>First Name</th>
-						<th>Last Name</th>
-						<th>Street Address</th>
-						<th>Email Address</th>
-						<th>Phone Number</th>
+						<?php foreach ( $sortable_columns as $column_key => $column_label ) : ?>
+							<th>
+								<a href="<?php echo esc_url( add_query_arg( array( 'orderby' => $column_key, 'order' => $order === 'ASC' ? 'DESC' : 'ASC' ) ) ); ?>">
+									<?php echo esc_html( $column_label ); ?>
+								</a>
+							</th>
+						<?php endforeach; ?>
 					</tr>
 				</thead>
 				<tbody>
-					<?php foreach ( $block_list as $index => $entry ) : ?>
+					<?php foreach ( $sorted_block_list as $index => $entry ) : ?>
 						<tr>
 							<td><input type="checkbox" name="delete_entry[]" value="<?php echo $index; ?>"></td>
 							<td><?php echo esc_html( $entry['first_name'] ); ?></td>
@@ -93,6 +124,7 @@ function chargeback_blocker_admin_page() {
 							<td><?php echo esc_html( $entry['street_address'] ); ?></td>
 							<td><?php echo esc_html( $entry['email'] ); ?></td>
 							<td><?php echo esc_html( $entry['phone'] ); ?></td>
+							<td><?php echo esc_html( $entry['status'] ); ?></td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -105,6 +137,22 @@ function chargeback_blocker_admin_page() {
 	<?php
 }
 
+// Sort the block list entries.
+function chargeback_blocker_sort_entries( $entries, $orderby, $order ) {
+	// Sort the block list based on the selected column.
+	usort( $entries, function( $a, $b ) use ( $orderby, $order ) {
+		if ( $a[ $orderby ] === $b[ $orderby ] ) {
+			return 0;
+		}
+
+		$cmp = $a[ $orderby ] < $b[ $orderby ] ? -1 : 1;
+		return $order === 'ASC' ? $cmp : -$cmp;
+	} );
+
+	return $entries;
+}
+
+// Save the block list entries to the database.
 // Save the block list entries to the database
 function chargeback_blocker_save_entries() {
 	// Verify the nonce for security
@@ -118,6 +166,7 @@ function chargeback_blocker_save_entries() {
 	$street_address = sanitize_text_field( $_POST['street_address'] );
 	$email          = sanitize_email( $_POST['email'] );
 	$phone          = sanitize_text_field( $_POST['phone'] );
+	$status         = sanitize_text_field( $_POST['status'] );
 
 	// Fetch existing block list entries.
 	$block_list = get_option( 'chargeback_block_list', array() );
@@ -129,6 +178,7 @@ function chargeback_blocker_save_entries() {
 		'street_address' => $street_address,
 		'email'          => $email,
 		'phone'          => $phone,
+		'status'         => $status,
 	);
 
 	// Save the updated block list to the database.
@@ -139,18 +189,21 @@ function chargeback_blocker_save_entries() {
 	exit;
 }
 
-// Delete selected entries from the database.
+
+/**
+ * Delete selected entries from the database.
+ */
 function chargeback_blocker_delete_entries() {
 	// Verify the nonce for security.
 	if ( ! isset( $_POST['chargeback_blocker_delete_nonce'] ) || ! wp_verify_nonce( $_POST['chargeback_blocker_delete_nonce'], 'chargeback_blocker_delete_nonce' ) ) {
 		return;
 	}
 
+	// Sanitize the $_POST['delete_entry'] data before processing.
+	$entries_to_delete = isset( $_POST['delete_entry'] ) ? wp_unslash( $_POST['delete_entry'] ) : array();
+
 	// Fetch existing block list entries.
 	$block_list = get_option( 'chargeback_block_list', array() );
-
-	// Get the selected entry indices to delete.
-	$entries_to_delete = isset( $_POST['delete_entry'] ) ? $_POST['delete_entry'] : array();
 
 	// Delete selected entries from the block list.
 	foreach ( $entries_to_delete as $index ) {
@@ -169,3 +222,5 @@ function chargeback_blocker_delete_entries() {
 	wp_safe_redirect( admin_url( 'admin.php?page=chargeback_blocker' ) );
 	exit;
 }
+
+
