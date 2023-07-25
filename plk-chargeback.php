@@ -6,10 +6,21 @@
  * Version: 1.0
  * Author: Geoff Cordner
  * Author URI: https://geoffcordner.net/
+ *
+ * @package PLK_Chargeback_Checker
  */
 
 // Initialize the plugin and add the admin page.
 add_action( 'admin_menu', 'chargeback_blocker_add_admin_page' );
+
+/**
+ * Adds the Chargeback Blocker admin page to the WordPress dashboard menu.
+ *
+ * This function is hooked to the 'admin_menu' action, which allows us to add the plugin's admin page to the dashboard menu.
+ * The admin page is accessible to users with the 'manage_options' capability.
+ *
+ * @since 1.0
+ */
 function chargeback_blocker_add_admin_page() {
 	add_menu_page(
 		'Chargeback Blocker',
@@ -20,20 +31,27 @@ function chargeback_blocker_add_admin_page() {
 	);
 }
 
-// Display the admin page
+/**
+ * Display the Chargeback Blocker admin page.
+ *
+ * This function outputs the HTML and form for the Chargeback Blocker admin page in the WordPress dashboard.
+ * It handles form submissions for saving, updating, and deleting block list entries.
+ *
+ * @since 1.0
+ */
 function chargeback_blocker_admin_page() {
 	// Save the block list entries if the form is submitted.
-	if ( 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['submit'] ) ) {
+	if ( isset( $_POST['submit'] ) && isset( $_POST['chargeback_blocker_save_nonce'] ) && wp_verify_nonce( $_POST['chargeback_blocker_save_nonce'], 'chargeback_blocker_save_nonce' ) ) {
 		chargeback_blocker_save_entries();
 	}
 
 	// Update "disable" field for selected entries if the form is submitted.
-	if ( 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['update'] ) ) {
+	if ( isset( $_POST['update'] ) && isset( $_POST['chargeback_blocker_save_nonce'] ) && wp_verify_nonce( $_POST['chargeback_blocker_save_nonce'], 'chargeback_blocker_save_nonce' ) ) {
 		chargeback_blocker_update_entries();
 	}
 
 	// Delete selected entries if the form is submitted.
-	if ( 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['delete'] ) ) {
+	if ( isset( $_POST['delete'] ) && isset( $_POST['chargeback_blocker_delete_nonce'] ) && wp_verify_nonce( $_POST['chargeback_blocker_delete_nonce'], 'chargeback_blocker_delete_nonce' ) ) {
 		chargeback_blocker_delete_entries();
 	}
 
@@ -81,83 +99,92 @@ function chargeback_blocker_admin_page() {
 		</form>
 
 		<!-- Display existing block list entries -->
-	<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=chargeback_blocker' ) ); ?>">
-		<?php wp_nonce_field( 'chargeback_blocker_delete_nonce', 'chargeback_blocker_delete_nonce' ); ?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=chargeback_blocker' ) ); ?>">
+			<?php wp_nonce_field( 'chargeback_blocker_delete_nonce', 'chargeback_blocker_delete_nonce' ); ?>
 
-		<!-- Make the table sortable and searchable -->
-		<?php
-		$sortable_columns = array(
-			'first_name'     => 'First Name',
-			'last_name'      => 'Last Name',
-			'street_address' => 'Street Address',
-			'email'          => 'Email Address',
-			'phone'          => 'Phone Number',
-			'status'         => 'Status',
-			'disable'        => 'Disable', // Add the "disable" field to sortable columns.
-		);
+			<!-- Make the table sortable and searchable -->
+			<?php
+			$sortable_columns = array(
+				'first_name'     => 'First Name',
+				'last_name'      => 'Last Name',
+				'street_address' => 'Street Address',
+				'email'          => 'Email Address',
+				'phone'          => 'Phone Number',
+				'status'         => 'Status',
+				'disable'        => 'Disable', // Add the "disable" field to sortable columns.
+			);
 
-		// Get the current ordering.
-		$orderby = isset( $_GET['orderby'] ) && array_key_exists( $_GET['orderby'], $sortable_columns ) ? $_GET['orderby'] : 'first_name';
+			// Get the current ordering.
+			$orderby = isset( $_GET['orderby'] ) && array_key_exists( $_GET['orderby'], $sortable_columns ) ? $_GET['orderby'] : 'first_name';
 
-		// Get the current order direction.
-		$order = isset( $_GET['order'] ) && in_array( strtoupper( $_GET['order'] ), array( 'ASC', 'DESC' ) ) ? strtoupper( $_GET['order'] ) : 'ASC';
+			// Get the current order direction.
+			$order = isset( $_GET['order'] ) && in_array( strtoupper( $_GET['order'] ), array( 'ASC', 'DESC' ) ) ? strtoupper( $_GET['order'] ) : 'ASC';
 
-		// Sort the block list entries.
-		$sorted_block_list = chargeback_blocker_sort_entries( $block_list, $orderby, $order );
-		?>
+			// Sort the block list entries.
+			$sorted_block_list = chargeback_blocker_sort_entries( $block_list, $orderby, $order );
+			?>
 
-		<table class="wp-list-table widefat fixed striped">
-			<thead>
-				<tr>
-					<th>Delete</th>
-					<?php foreach ( $sortable_columns as $column_key => $column_label ) : ?>
-						<th>
-							<a href="
-							<?php
-							echo esc_url(
-								add_query_arg(
-									array(
-										'orderby' => $column_key,
-										'order'   => $order === 'ASC' ? 'DESC' : 'ASC',
-									)
-								)
-							);
-							?>
-										">
-								<?php echo esc_html( $column_label ); ?>
-							</a>
-						</th>
-					<?php endforeach; ?>
-				</tr>
-			</thead>
-			<tbody>
-				<?php foreach ( $sorted_block_list as $index => $entry ) : ?>
+			<table class="wp-list-table widefat fixed striped">
+				<thead>
 					<tr>
-						<td><input type="checkbox" name="delete_entry[]" value="<?php echo $index; ?>"></td>
-						<td><?php echo esc_html( $entry['first_name'] ); ?></td>
-						<td><?php echo esc_html( $entry['last_name'] ); ?></td>
-						<td><?php echo esc_html( $entry['street_address'] ); ?></td>
-						<td><?php echo esc_html( $entry['email'] ); ?></td>
-						<td><?php echo esc_html( $entry['phone'] ); ?></td>
-						<td><?php echo esc_html( $entry['status'] ); ?></td>
-						<td>
-							<!-- Add the "disable" checkbox -->
-							<input type="checkbox" name="disable_entry[<?php echo $index; ?>]" value="yes" <?php checked( $entry['disable'], 'yes' ); ?>>
-						</td>
+						<th>Delete</th>
+						<?php foreach ( $sortable_columns as $column_key => $column_label ) : ?>
+							<th>
+								<a href="
+								<?php
+								echo esc_url(
+									add_query_arg(
+										array(
+											'orderby' => $column_key,
+											'order'   => 'ASC' === $order ? 'DESC' : 'ASC',
+										)
+									)
+								);
+								?>
+											">
+									<?php echo esc_html( $column_label ); ?>
+								</a>
+							</th>
+						<?php endforeach; ?>
 					</tr>
-				<?php endforeach; ?>
-			</tbody>
-		</table>
-		<br>
-		<!-- Buttons to delete selected entries and update "disable" field -->
-		<input type="submit" name="delete" value="Delete Selected Entries">
-		<input type="submit" name="update" value="Update">
-	</form>
+				</thead>
+				<tbody>
+					<?php foreach ( $sorted_block_list as $index => $entry ) : ?>
+						<tr>
+							<td><input type="checkbox" name="delete_entry[]" value="<?php echo $index; ?>"></td>
+							<td><?php echo esc_html( $entry['first_name'] ); ?></td>
+							<td><?php echo esc_html( $entry['last_name'] ); ?></td>
+							<td><?php echo esc_html( $entry['street_address'] ); ?></td>
+							<td><?php echo esc_html( $entry['email'] ); ?></td>
+							<td><?php echo esc_html( $entry['phone'] ); ?></td>
+							<td><?php echo esc_html( $entry['status'] ); ?></td>
+							<td>
+								<!-- Add the "disable" checkbox -->
+								<input type="checkbox" name="disable_entry[<?php echo $index; ?>]" value="yes" <?php checked( $entry['disable'], 'yes' ); ?>>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<br>
+			<!-- Buttons to delete selected entries and update "disable" field -->
+			<input type="submit" name="delete" value="Delete Selected Entries">
+			<input type="submit" name="update" value="Update">
+		</form>
 	</div>
 	<?php
 }
 
-// Process the update of the "disable" field.
+
+/**
+ * Process the update of the "disable" field for block list entries.
+ *
+ * This function handles the form submission when the "Update" button is clicked to update the "disable" field
+ * for selected block list entries. It fetches the existing block list entries, updates the "disable" field
+ * based on the submitted data, and saves the updated block list to the database.
+ *
+ * @since 1.0
+ */
 function chargeback_blocker_update_entries() {
 	// Check if the "Update" button is clicked and the "disable_entry" data is present.
 	if ( isset( $_POST['update'] ) && isset( $_POST['disable_entry'] ) ) {
