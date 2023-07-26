@@ -307,3 +307,97 @@ function chargeback_blocker_save_entries() {
 	wp_safe_redirect( admin_url( 'admin.php?page=chargeback_blocker' ) );
 	exit;
 }
+
+/**
+ * Check for chargebacks and update order status if needed.
+ *
+ * This function runs when an order payment is approved and the order status is about to change from pending to processing.
+ * It checks for chargebacks in the chargeback_block_list array and updates the order status accordingly.
+ *
+ * @param int $order_id Order ID.
+ */
+function plk_chargeback_check( $order_id ) {
+	// Unserialize the chargeback_block_list array.
+	$chargeback_block_list = get_option( 'chargeback_block_list', array() );
+	$chargeback_block_list = unserialize( $chargeback_block_list );
+
+	// Get the order object.
+	$order = wc_get_order( $order_id );
+
+	if ( ! empty( $chargeback_block_list ) && is_array( $chargeback_block_list ) ) {
+		// Get order data for comparison.
+		$billing_first_name  = $order->get_billing_first_name();
+		$billing_last_name   = $order->get_billing_last_name();
+		$billing_address_1   = $order->get_billing_address_1();
+		$billing_email       = $order->get_billing_email();
+		$billing_phone       = preg_replace( '/\D/', '', $order->get_billing_phone() ); // Strip non-numeric characters.
+		$shipping_first_name = $order->get_shipping_first_name();
+		$shipping_last_name  = $order->get_shipping_last_name();
+		$shipping_address_1  = $order->get_shipping_address_1();
+		$shipping_email      = $order->get_shipping_email();
+		$shipping_phone      = preg_replace( '/\D/', '', $order->get_shipping_phone() ); // Strip non-numeric characters.
+
+		// Loop through each entry in chargeback_block_list.
+		foreach ( $chargeback_block_list as $entry ) {
+			// Strip non-numeric characters from entry phone number.
+			$entry_phone = preg_replace( '/\D/', '', $entry['phone'] );
+
+			// Check if billing first and last name match the entry.
+			if (
+				0 === strcasecmp( $billing_first_name . ' ' . $billing_last_name, $entry['first_name'] . ' ' . $entry['last_name'] )
+				&& 'yes' !== $entry['disable']
+			) {
+				plk_update_order_status( 'on-hold', $order_id, $order );
+				return; // Exit the function once the order status is updated.
+			}
+
+			// Check if billing address matches the entry.
+			if ( 0 === strcasecmp( $billing_address_1, $entry['street_address'] ) && 'yes' !== $entry['disable'] ) {
+				plk_update_order_status( 'on-hold', $order_id, $order );
+				return;
+			}
+
+			// Check if billing email matches the entry.
+			if ( 0 === strcasecmp( $billing_email, $entry['email'] ) && 'yes' !== $entry['disable'] ) {
+				plk_update_order_status( 'on-hold', $order_id, $order );
+				return;
+			}
+
+			// Check if billing phone matches the entry.
+			if ( 0 === strcasecmp( $billing_phone, $entry_phone ) && 'yes' !== $entry['disable'] ) {
+				plk_update_order_status( 'on-hold', $order_id, $order );
+				return;
+			}
+
+			// Check if shipping first and last name match the entry.
+			if (
+				0 === strcasecmp( $shipping_first_name . ' ' . $shipping_last_name, $entry['first_name'] . ' ' . $entry['last_name'] )
+				&& 'yes' !== $entry['disable']
+			) {
+				plk_update_order_status( 'on-hold', $order_id, $order );
+				return;
+			}
+
+			// Check if shipping address matches the entry.
+			if ( 0 === strcasecmp( $shipping_address_1, $entry['street_address'] ) && 'yes' !== $entry['disable'] ) {
+				plk_update_order_status( 'on-hold', $order_id, $order );
+				return;
+			}
+
+			// Check if shipping email matches the entry.
+			if ( 0 === strcasecmp( $shipping_email, $entry['email'] ) && 'yes' !== $entry['disable'] ) {
+				plk_update_order_status( 'on-hold', $order_id, $order );
+				return;
+			}
+
+			// Check if shipping phone matches the entry.
+			if ( 0 === strcasecmp( $shipping_phone, $entry_phone ) && 'yes' !== $entry['disable'] ) {
+				plk_update_order_status( 'on-hold', $order_id, $order );
+				return;
+			}
+		}
+	}
+}
+add_action( 'woocommerce_order_status_pending_to_processing', 'plk_chargeback_check' );
+
+
